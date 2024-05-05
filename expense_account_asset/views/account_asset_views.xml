@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record model="ir.ui.view" id="account_asset.view_account_asset_form">
+        <field name="name">account.asset.form</field>
+        <field name="model">account.asset</field>
+        <field name="priority">1</field>
+        <field name="arch" type="xml">
+            <form string="Asset">
+                <field name="company_id" invisible="1" readonly="state != 'draft'"/>
+                <field name="currency_id" invisible="1"/>
+                <field name="account_type" invisible="1"/>
+                <field name="account_asset_id" invisible="1" readonly="state == 'close'"/>
+                <field name="display_account_asset_id" invisible="1"/>
+                <field name="state" invisible="1"/>
+                <field name="total_depreciation_entries_count" invisible="1"/>
+                <field name="parent_id" invisible="1"/>
+                <header>
+                    <button name="validate" invisible="state != 'draft'" string="Confirm" type="object" class="oe_highlight"/>
+                    <button type="object" name="compute_depreciation_board" string="Compute Depreciation" invisible="state != 'draft' or is_prepaid == True"/>
+                    <button type="object" name="compute_depreciation_board" string="Compute Expense" invisible="state != 'draft' or is_prepaid == False"/>
+                    <button name="set_to_draft" string="Set to Draft" type="object" invisible="depreciation_move_ids or state not in ['open', 'cancelled']"/>
+                    <button name="set_to_running" string="Set to Running" type="object" invisible="state != 'close'"/>
+                    <button name="resume_after_pause" string="Resume Depreciation" type="object" class="oe_highlight" invisible="state != 'paused'"/>
+                    <button name="action_asset_modify" invisible="state != 'open'" string="Modify Depreciation" type="object" data-hotkey="e" class="oe_highlight"/>
+                    <button name="action_save_model" invisible="state not in ('open', 'paused', 'close')" string="Save as Model" type="object"/>
+                    <button name="set_to_cancelled" string="Cancel Asset" type="object" invisible="state != 'open'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,open" invisible="state == 'model'"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box" invisible="state == 'model'">
+                        <button class="oe_stat_button" name="open_entries"  type="object" icon="fa-bars">
+                            <field string="Posted Entries" name="depreciation_entries_count" widget="statinfo" />
+                        </button>
+                        <button class="oe_stat_button" name="open_increase"  type="object" icon="fa-chevron-circle-up" invisible="gross_increase_count == 0">
+                            <field string="Gross Increase" name="gross_increase_count" widget="statinfo" />
+                        </button>
+                        <button class="oe_stat_button" string="Parent Asset" name="open_parent_id" type="object" icon="fa-bars" invisible ="not parent_id"/>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name" name="name_label" string="Asset Name" invisible="state == 'model' or is_prepaid == True"/>
+                        <label for="name" name="name_label" string="Prepaid Expense Name" invisible="state == 'model' or is_prepaid == False"/>
+                        <label for="name" name="model_name_label" string="Asset Model name" invisible="state != 'model' or is_prepaid == True"/>
+                        <label for="name" name="model_name_label_expense" string="Prepaid Expense Model name" invisible="state != 'model' or is_prepaid == False"/>
+                        <h1>
+                            <field name="name" placeholder="e.g. Laptop iBook" required="1"/>
+                        </h1>
+                    </div>
+                    <group invisible="state != 'model'">
+                        <group string="Depreciation Method">
+                            <field name="method" required="1" readonly="state not in ['draft', 'model']" invisible="is_prepaid == True"/>
+                            <field name="method_progress_factor" widget="percentage" invisible="method == 'linear'" readonly="state not in ['draft', 'model']" required="method in ('degressive', 'degressive_then_linear')"/>
+                            <label for="method_number" string="Duration" invisible="is_prepaid == True"/>
+                            <label for="method_number" string="Number of Recognitions" invisible="is_prepaid == False"/>
+                            <div class="o_row">
+                                <field name="method_number" required="1" readonly="state not in ['draft', 'model']"/>
+                                <field name="method_period" required="1" readonly="state not in ['draft', 'model']" nolabel="1"/>
+                            </div>
+                            <field name="prorata_computation_type" readonly="state not in ['draft', 'model']"/>
+                        </group>
+                        <group string="Accounting">
+                            <field name="company_id" options="{'no_create': True}" groups="base.group_multi_company" readonly="state != 'draft'"/>
+                            <field
+                                name="account_asset_id"
+                                domain="[('account_type', 'in', (
+                                    'asset_fixed',
+                                    'asset_non_current',
+                                    'asset_current'))]"
+                                context="{
+                                    'default_account_type': 'asset_fixed',
+                                    'hide_model_on_account': state == 'model' and not id,
+                                    'account_type_domain': [('account_type', 'in', (
+                                        'asset_fixed',
+                                        'asset_non_current'))]}"
+                                groups="base.group_no_one"
+                                invisible="not display_account_asset_id or is_prepaid == True"
+                                readonly="state == 'close'"/>
+                            <field
+                                name="account_depreciation_id"
+                                domain="[('account_type', 'in', (
+                                    'asset_fixed',
+                                    'asset_prepayments',
+                                    'asset_non_current',
+                                    'asset_current'))]"
+                                context="{
+                                    'default_account_type': 'asset_non_current',
+                                    'hide_model_on_account': state == 'model' and not id,
+                                    'account_type_domain': [('account_type', 'in', (
+                                        'asset_fixed',
+                                        'asset_prepayments',
+                                        'asset_non_current'))]}"
+                                required="1"
+                                readonly="state == 'close'" string="Depreciation Account" invisible="is_prepaid == True"/>
+                            <field
+                                name="account_depreciation_id"
+                                domain="[('account_type', 'in', (
+                                    'asset_fixed',
+                                    'asset_prepayments',
+                                    'asset_non_current',
+                                    'asset_current'))]"
+                                context="{
+                                    'default_account_type': 'asset_non_current',
+                                    'hide_model_on_account': state == 'model' and not id,
+                                    'account_type_domain': [('account_type', 'in', (
+                                        'asset_fixed',
+                                        'asset_prepayments',
+                                        'asset_non_current'))]}"
+                                required="1"
+                                readonly="state == 'close'" string="Prepayment Account" invisible="is_prepaid == False"/>
+                            <field
+                                name="account_depreciation_expense_id"
+                                domain="[('account_type', 'in', (
+                                    'expense_depreciation',
+                                    'expense_direct_cost',
+                                    'expense'))]"
+                                context="{
+                                    'default_account_type': 'expense_depreciation',
+                                    'default_tax_ids': [],
+                                    'hide_model_on_account': state == 'model' and not id,
+                                    'account_type_domain': [('account_type', 'in', (
+                                        'expense_depreciation',
+                                        'expense','expense_direct_cost'))]}"
+                                required="1"
+                                readonly="state == 'close'" string="Expense Account" invisible="is_prepaid == True"/>
+                            <field
+                                name="account_depreciation_expense_id"
+                                domain="[('account_type', 'in', (
+                                    'expense_depreciation',
+                                    'expense_direct_cost',
+                                    'expense'))]"
+                                context="{
+                                    'default_account_type': 'expense_depreciation',
+                                    'default_tax_ids': [],
+                                    'hide_model_on_account': state == 'model' and not id,
+                                    'account_type_domain': [('account_type', 'in', (
+                                        'expense_depreciation',
+                                        'expense','expense_direct_cost'))]}"
+                                required="1"
+                                readonly="state == 'close'" string="Prepaid Expense Account" invisible="is_prepaid == False"/>
+                            <field name="journal_id" required="1" readonly="state not in ['draft', 'model']"/>
+                            <field name="is_prepaid" invisible="1"/>
+                            <field name="state" invisible="1"/>
+                            <field name="partner_id" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook colspan="4" invisible="state == 'model'">
+                        <page string="Asset" name="main_page">
+                            <group>
+                                <field name="active" invisible="1"/>
+                                <group string="Recognitions Values" invisible="state == 'model' or is_prepaid == False" name="asset_values">
+                                    <field name="original_value" widget="monetary" options="{'currency_field': 'currency_id'}" invisible="state == 'model'" readonly="state != 'draft'"/>
+                                    <field name="gross_increase_value" widget="monetary" invisible="state == 'model' or gross_increase_value == 0" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="acquisition_date" invisible="state == 'model'" readonly="state != 'draft'" string="Recognition Date"/>
+                                    <field  name="model_id"
+                                            string="Asset Model"
+                                            domain="[('state', '=', 'model'),('is_prepaid','=',False)]"
+                                            options="{'no_quick_create': True}"
+                                            context="{
+                                                'default_state': 'model',
+                                                'default_account_asset_id': account_asset_id,
+                                                'default_account_depreciation_id': account_depreciation_id,
+                                                'default_account_depreciation_expense_id': account_depreciation_expense_id
+                                            }" readonly="state != 'draft'" invisible="is_prepaid == True"/>
+                                    <field  name="model_id"
+                                            string="Prepaid Expense Model"
+                                            domain="[('state', '=', 'model'),('is_prepaid','=',True)]"
+                                            options="{'no_quick_create': True}"
+                                            context="{
+                                                'default_state': 'model',
+                                                'default_account_asset_id': account_asset_id,
+                                                'default_account_depreciation_id': account_depreciation_id,
+                                                'default_account_depreciation_expense_id': account_depreciation_expense_id
+                                            }" readonly="state != 'draft'" invisible="is_prepaid == False"/>
+                                </group>
+                                <group string="Asset Values" invisible="state == 'model' or is_prepaid == True" name="asset_values">
+                                    <field name="original_value" widget="monetary" options="{'currency_field': 'currency_id'}" invisible="state == 'model'" readonly="state != 'draft'"/>
+                                    <field name="gross_increase_value" widget="monetary" invisible="state == 'model' or gross_increase_value == 0" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="acquisition_date" invisible="state == 'model'" readonly="state != 'draft'"/>
+                                    <field  name="model_id"
+                                            string="Asset Model"
+                                            domain="[('state', '=', 'model'),('is_prepaid','=',False)]"
+                                            options="{'no_quick_create': True}"
+                                            context="{
+                                                'default_state': 'model',
+                                                'default_account_asset_id': account_asset_id,
+                                                'default_account_depreciation_id': account_depreciation_id,
+                                                'default_account_depreciation_expense_id': account_depreciation_expense_id
+                                            }" readonly="state != 'draft'" invisible="is_prepaid == True"/>
+                                    <field  name="model_id"
+                                            string="Prepaid Expense Model"
+                                            domain="[('state', '=', 'model'),('is_prepaid','=',True)]"
+                                            options="{'no_quick_create': True}"
+                                            context="{
+                                                'default_state': 'model',
+                                                'default_account_asset_id': account_asset_id,
+                                                'default_account_depreciation_id': account_depreciation_id,
+                                                'default_account_depreciation_expense_id': account_depreciation_expense_id
+                                            }" readonly="state != 'draft'" invisible="is_prepaid == False"/>
+                                </group>
+                                <group string="Current Values" invisible="state == 'model'" name="current_values">
+                                    <field name="salvage_value" widget="monetary" options="{'currency_field': 'currency_id'}" readonly="state != 'draft'"/>
+                                    <label for="book_value" invisible="is_prepaid == True" string="Book Value"/>
+                                    <label for="book_value" invisible="is_prepaid == False" string="Prepaid Expense Amount"/>
+                                    <span>
+                                        <field name="book_value" class="oe_inline" widget="monetary" required="1" invisible="state == 'model'" options="{'currency_field': 'currency_id'}"/>
+                                        <span invisible="salvage_value == 0">
+                                            (incl.
+                                            <field name="value_residual" nolabel="1" force_save="1" widget="monetary" invisible="state == 'model'" options="{'currency_field': 'currency_id'}"/>
+                                             depreciable)
+                                        </span>
+                                    </span>
+                                </group>
+                                <group string="Depreciation Method">
+                                    <field name="method" required="1" readonly="state not in ['draft', 'model']" invisible="is_prepaid == True"/>
+                                    <field name="method_progress_factor" widget="percentage" invisible="method == 'linear'" readonly="state not in ['draft', 'model']" required="method in ('degressive', 'degressive_then_linear')"/>
+                                    <label for="method_number" string="Duration" invisible="is_prepaid == True"/>
+                                    <label for="method_number" string="Number of Recognitions" invisible="is_prepaid == False"/>
+                                    <div class="o_row">
+                                        <field name="method_number" required="1" readonly="state not in ['draft', 'model']" class="oe_inline"/>
+                                        <field name="method_period" required="1" readonly="state not in ['draft', 'model']" nolabel="1"/>
+                                    </div>
+                                    <field name="prorata_computation_type" readonly="state not in ['draft', 'model']"/>
+                                    <field name="prorata_date" invisible="prorata_computation_type == 'none' or is_prepaid == True" readonly="state != 'draft'" required="0"/>
+                                </group>
+                                <group string="Accounting">
+                                    <field name="company_id" options="{'no_create': True}" groups="base.group_multi_company" readonly="state != 'draft'"/>
+                                    <field
+                                        name="account_asset_id"
+                                        domain="[('account_type', 'in', (
+                                            'asset_fixed',
+                                            'asset_non_current',
+                                            'asset_current'))]"
+                                        context="{
+                                            'default_account_type': 'asset_fixed',
+                                            'hide_model_on_account': state == 'model' and not id,
+                                            'account_type_domain': [('account_type', 'in', (
+                                                'asset_fixed',
+                                                'asset_non_current'))]}"
+                                        invisible="not display_account_asset_id or is_prepaid == True"
+                                        readonly="state == 'close'"/>
+                                    <field
+                                        name="account_depreciation_id"
+                                        domain="[('account_type', 'in', (
+                                            'asset_fixed',
+                                            'asset_prepayments',
+                                            'asset_non_current',
+                                            'asset_current'))]"
+                                        context="{
+                                            'default_account_type': 'asset_non_current',
+                                            'hide_model_on_account': state == 'model' and not id,
+                                            'account_type_domain': [('account_type', 'in', (
+                                                'asset_fixed',
+                                                'asset_prepayments',
+                                                'asset_non_current'))]}"
+                                        required="1"
+                                        invisible="is_prepaid == False"
+                                        readonly="state == 'close'" string="Prepayment Account"/>
+                                    <field
+                                        name="account_depreciation_id"
+                                        domain="[('account_type', 'in', (
+                                            'asset_fixed',
+                                            'asset_prepayments',
+                                            'asset_non_current',
+                                            'asset_current'))]"
+                                        context="{
+                                            'default_account_type': 'asset_non_current',
+                                            'hide_model_on_account': state == 'model' and not id,
+                                            'account_type_domain': [('account_type', 'in', (
+                                                'asset_fixed',
+                                                'asset_prepayments',
+                                                'asset_non_current'))]}"
+                                        required="1"
+                                        invisible="is_prepaid == True"
+                                        readonly="state == 'close'" string="Depreciation Account"/>
+                                    <field
+                                        name="account_depreciation_expense_id"
+                                        domain="[('account_type', 'in', (
+                                            'expense_depreciation',
+                                            'expense_direct_cost',
+                                            'expense'))]"
+                                        context="{
+                                            'default_account_type': 'expense_depreciation',
+                                            'hide_model_on_account': state == 'model' and not id,
+                                            'account_type_domain': [('account_type', 'in', (
+                                                'expense_depreciation',
+                                                'expense','expense_direct_cost'))]}"
+                                        required="1"
+                                        invisible="is_prepaid == False"
+                                        readonly="state == 'close'" string="Prepaid Expense Account"/>
+                                    <field
+                                        name="account_depreciation_expense_id"
+                                        domain="[('account_type', 'in', (
+                                            'expense_depreciation',
+                                            'expense_direct_cost',
+                                            'expense'))]"
+                                        context="{
+                                            'default_account_type': 'expense_depreciation',
+                                            'hide_model_on_account': state == 'model' and not id,
+                                            'account_type_domain': [('account_type', 'in', (
+                                                'expense_depreciation',
+                                                'expense','expense_direct_cost'))]}"
+                                        required="1"
+                                        invisible="is_prepaid == True"
+                                        readonly="state == 'close'" string="Expense Account"/>
+                                    <field name="journal_id" required="1" readonly="state not in ['draft', 'model']"/>
+                                    <field name="analytic_distribution" groups="analytic.group_analytic_accounting" widget="analytic_distribution"
+                                           options="{'account_field': 'account_depreciation_expense_id', 'business_domain': 'general'}"
+                                           readonly="0"/>
+                                    <field name="is_prepaid" invisible="1"/>
+                                    <field name="partner_id" invisible="is_prepaid == False" readonly="state == 'close'"/>
+                                </group>
+                                <group string="Value at Import" groups="base.group_no_one" invisible="state == 'model'">
+                                    <field name="already_depreciated_amount_import" string="Depreciated Amount" readonly="state != 'draft'"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Depreciation Board" name="depreciation_board" invisible="total_depreciation_entries_count == 0 or is_prepaid == True">
+                            <field name="depreciation_move_ids" mode="tree" options="{'reload_whole_on_button': true}" readonly="state not in ['draft', 'open', 'paused']">
+                                <tree string="Depreciation Lines" decoration-info="state == 'draft'" create="0"  default_order="date asc, id asc" editable="top">
+                                    <field name="currency_id" column_invisible="True" readonly="state in ['cancel', 'posted']"/>
+                                    <field name="date" string="Depreciation Date" readonly="state in ['cancel', 'posted']"/>
+                                    <field name="ref" invisible="0"/>
+                                    <field name="reversal_move_id" widget="deprec_lines_reversed"/>
+                                    <field name="depreciation_value" widget="monetary" string="Depreciation" options="{'currency_field': 'currency_id'}" readonly="state == 'posted'"/>
+                                    <field name="asset_depreciated_value" readonly="1" force_save="1" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="asset_remaining_value" readonly="1" widget="monetary" force_save="1" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="name" readonly="1" string="Journal Entry"/>
+                                    <field name="state" column_invisible="True"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Expense Board" name="expense_board" invisible="total_depreciation_entries_count == 0 or is_prepaid == False">
+                            <field name="depreciation_move_ids" mode="tree" options="{'reload_whole_on_button': true}" readonly="state not in ['draft', 'open', 'paused']">
+                                <tree string="Depreciation Lines" decoration-info="state == 'draft'" create="0"  default_order="date asc, id asc" editable="top">
+                                    <field name="currency_id" column_invisible="True" readonly="state in ['cancel', 'posted']"/>
+                                    <field name="date" string="Depreciation Date" readonly="state in ['cancel', 'posted']"/>
+                                    <field name="ref" invisible="0"/>
+                                    <field name="reversal_move_id" widget="deprec_lines_reversed"/>
+                                    <field name="depreciation_value" widget="monetary" string="Depreciation" options="{'currency_field': 'currency_id'}" readonly="state == 'posted'"/>
+                                    <field name="asset_depreciated_value" readonly="1" force_save="1" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="asset_remaining_value" readonly="1" widget="monetary" force_save="1" options="{'currency_field': 'currency_id'}"/>
+                                    <field name="name" readonly="1" string="Journal Entry"/>
+                                    <field name="state" column_invisible="True"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Bills" name="related_items">
+                            <field
+                                name="original_move_line_ids"
+                                readonly="state == 'posted'"
+                                domain="[
+                                    ('parent_state', '=', 'posted'),
+                                    ('company_id', '=', company_id),
+                                    ('account_id.account_type', 'in', ('asset_fixed', 'asset_non_current', 'asset_current')),
+                                    ('move_id.move_type', 'in', ('in_invoice', 'in_refund', 'in_receipt', 'entry')),
+                                    ('move_id.asset_id', '=', False),
+                                ]"
+                                class="original_move_line_ids_field"
+                                context="{'disable_preview': 1, 'tree_view_ref': 'account_asset.view_move_line_tree_asset'}">
+                                <tree create="0" no_open="1">
+                                    <field name="date"/>
+                                    <field name="move_name" string="Journal Entry" widget="open_move_widget"/>
+                                    <field name="account_id"/>
+                                    <field name="name"/>
+                                    <field name="debit" widget="monetary"/>
+                                    <field name="credit" widget="monetary"/>
+                                    <field name="company_currency_id" column_invisible="True"/>
+                                </tree>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <div class="oe_chatter">
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids"/>
+                </div>
+            </form>
+        </field>
+    </record>
+
+    <!-- <record model="ir.actions.act_window" id="action_account_asset_form">
+        <field name="name">Assets</field>
+        <field name="res_model">account.asset</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'tree', 'view_id': ref('view_account_asset_tree')}),
+            (0, 0, {'view_mode': 'kanban'}),
+            (0, 0, {'view_mode': 'activity'}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_account_asset_form')})]"/>
+        <field name="domain">[('state', '!=', 'model'), ('parent_id', '=', False)]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create new asset
+            </p>
+        </field>
+    </record> -->
+
+    <!-- <record model="ir.actions.act_window" id="action_account_asset_model_form">
+        <field name="name">Asset Models</field>
+        <field name="res_model">account.asset</field>
+        <field name="view_mode">tree,kanban,form</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'tree', 'view_id': ref('view_account_asset_model_tree')}),
+            (0, 0, {'view_mode': 'kanban'}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_account_asset_form')})]"/>
+        <field name="search_view_id" ref="view_account_asset_model_search"/>
+        <field name="domain">[('state', '=', 'model')]</field>
+        <field name="context">{'default_state': 'model'}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create new asset model
+            </p>
+        </field>
+    </record> -->
+
+    <record model="ir.actions.act_window" id="action_account_perpaid_expense_form">
+        <field name="name">Prepaid Expense</field>
+        <field name="res_model">account.asset</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'tree', 'view_id': ref('account_asset.view_account_asset_tree')}),
+            (0, 0, {'view_mode': 'kanban'}),
+            (0, 0, {'view_mode': 'activity'}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('account_asset.view_account_asset_form')})]"/>
+        <field name="domain">[('state', '!=', 'model'), ('parent_id', '=', False),('is_prepaid', '=',True)]</field>
+        <field name="context">{'default_is_prepaid':True}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create new prepaid expense
+            </p>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="action_account_prepaid_asset_model_form">
+        <field name="name">Prepaid Expense Models</field>
+        <field name="res_model">account.asset</field>
+        <field name="view_mode">tree,kanban,form</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'tree', 'view_id': ref('account_asset.view_account_asset_model_tree')}),
+            (0, 0, {'view_mode': 'kanban'}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('account_asset.view_account_asset_form')})]"/>
+        <field name="search_view_id" ref="account_asset.view_account_asset_model_search"/>
+        <field name="domain">[('state', '=', 'model'),('is_prepaid', '=',True)]</field>
+        <field name="context">{'default_state': 'model','default_is_prepaid':True}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create new prepaid expense model
+            </p>
+        </field>
+    </record>
+
+    <menuitem parent="account.menu_finance_entries_management" id="menu_action_account_prepaid_expense_form" action="action_account_perpaid_expense_form" sequence="102" groups="account.group_account_readonly"/>
+
+    <menuitem parent="account.account_management_menu" sequence="2" id="menu_action_account_prepaid_expense_model_form" action="action_account_prepaid_asset_model_form" groups="account.group_account_manager"/>
+
+   
+
+</odoo>
